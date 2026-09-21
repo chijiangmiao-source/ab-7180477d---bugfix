@@ -66,6 +66,46 @@ def test_ambiguous_request_returns_two_canonical_witnesses(
         assert witness <= mirror
 
 
+def test_duplicate_complement_distances_ambiguous_over_http(
+    client: TestClient,
+) -> None:
+    # Regression: duplicated distances whose extra copy is an interior gap,
+    # not an endpoint complement, must not be rejected as impossible.
+    length = 20
+    distances = [
+        1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+        12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+    ]
+    expected = [[0, 1, 3, 6, 15, 16, 20], [0, 1, 5, 14, 15, 17, 20]]
+
+    response = client.post(
+        "/turnpike",
+        json={"L": length, "n": 7, "distances": distances},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"status": "ambiguous", "solutions": expected}
+
+    first, second = body["solutions"]
+    assert first < second and first[0] == 0 and first[-1] == length
+    for witness in body["solutions"]:
+        assert witness[0] == 0 and witness[-1] == length
+        assert witness == sorted(set(witness))
+        # Independent recomputation of the full 21-entry distance multiset.
+        assert Counter(pairwise(witness)) == Counter(distances)
+        assert len(pairwise(witness)) == 21
+        mirror = [length - x for x in reversed(witness)]
+        assert witness <= mirror
+
+    # Reversed input ordering must produce a byte-for-byte identical body.
+    reversed_response = client.post(
+        "/turnpike",
+        json={"L": length, "n": 7, "distances": list(reversed(distances))},
+    )
+    assert reversed_response.status_code == 200
+    assert reversed_response.content == response.content
+
+
 def test_distance_count_mismatch_points_at_field(client: TestClient) -> None:
     response = client.post(
         "/turnpike", json={"L": 10, "n": 4, "distances": [10]}

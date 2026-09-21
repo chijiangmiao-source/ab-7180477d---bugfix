@@ -110,6 +110,40 @@ def main() -> int:
     )
     check("ambiguous returns two verified canonical witnesses", ok, str(body))
 
+    # ambiguous regression: duplicated distances with a complement-coincident
+    # copy (one copy of 14 is the endpoint distance of point 6, the other is
+    # the interior gap 15 -> 1); formerly misreported as "impossible"
+    dup_ds = [
+        1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+        12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+    ]
+    dup_expected = [
+        [0, 1, 3, 6, 15, 16, 20],
+        [0, 1, 5, 14, 15, 17, 20],
+    ]
+    status, raw = call(
+        "/turnpike", {"L": 20, "n": 7, "distances": dup_ds}
+    )
+    body = json.loads(raw)
+    witnesses = body.get("solutions", [])
+    ok = (
+        status == 200
+        and body.get("status") == "ambiguous"
+        and witnesses == dup_expected
+        and witnesses[0] < witnesses[1]
+        and all(expect_valid_witness(w, 20, dup_ds) for w in witnesses)
+        and all(len(pairwise(w)) == 21 for w in witnesses)
+        and all(w <= [20 - x for x in reversed(w)] for w in witnesses)
+    )
+    check("duplicate/complement distances resolve ambiguous", ok, str(body))
+
+    # the same multiset in reverse order is byte-for-byte identical
+    _, rev_raw = call(
+        "/turnpike", {"L": 20, "n": 7, "distances": list(reversed(dup_ds))}
+    )
+    check("duplicate case reordered byte identical", rev_raw == raw,
+          f"{raw!r} != {rev_raw!r}")
+
     # structured error: count mismatch
     status, raw = call(
         "/turnpike", {"L": 10, "n": 4, "distances": [10]}

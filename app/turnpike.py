@@ -6,12 +6,17 @@ strictly increasing cut-point sequence.
 
 The implementation is the classical turnpike backtracking:
 
-* the largest remaining distance ``d`` must be ``y`` (measured from 0) or
-  ``L - y`` (measured from L) for the next placed point;
+* the largest remaining distance ``d`` must be the endpoint distance of the
+  next placed point, so the point coordinate is either ``d`` (measured from
+  0) or ``L - d`` (measured from L); every other remaining distance is left
+  untouched;
 * distance multiset deduction is done with explicit counts, and every branch
-  is fully rollbackable;
+  is fully rollbackable -- in particular, a copy of a repeated distance is
+  never earmarked ahead of time for an endpoint pair, since the same value may
+  equally come from an interior pair (e.g. two points separated by ``L/2``
+  coinciding with a duplicated endpoint complement);
 * at the root the two candidates are mirror images of each other, so only the
-  orientation that places the smallest interior coordinate is explored -- this
+  orientation that places the smaller interior coordinate is explored -- this
   removes the global reflection symmetry; emitted solutions are additionally
   normalised against their mirror image;
 * no generic constraint solver is used and no coordinate of [0, L] is ever
@@ -59,37 +64,6 @@ def _regenerate(solution: Sequence[int]) -> Counter[int]:
     return distances
 
 
-def _endpoint_pairs(
-    length: int, counts: Counter[int], point_count: int
-) -> tuple[tuple[tuple[int, int], ...], Counter[int]] | None:
-    available = counts.copy()
-    available[length] -= 1
-    if available[length] == 0:
-        del available[length]
-
-    pairs: list[tuple[int, int]] = []
-    for _ in range(point_count - 2):
-        selected: tuple[int, int] | None = None
-        for value in sorted(available, reverse=True):
-            complement = length - value
-            required = 2 if complement == value else 1
-            if complement > 0 and available.get(complement, 0) >= required:
-                selected = (min(value, complement), max(value, complement))
-                break
-        if selected is None:
-            return None
-
-        near, far = selected
-        available[near] -= 1
-        if available[near] == 0:
-            del available[near]
-        available[far] -= 1
-        if available[far] == 0:
-            del available[far]
-        pairs.append(selected)
-    return tuple(pairs), available
-
-
 def reconstruct(
     length: int, distances: Sequence[int]
 ) -> Mapping[str, object]:
@@ -114,10 +88,10 @@ def reconstruct(
     if original.get(length, 0) < 1:
         return {"status": IMPOSSIBLE}
 
-    endpoint_partition = _endpoint_pairs(length, original, n)
-    if endpoint_partition is None:
-        return {"status": IMPOSSIBLE}
-    endpoint_pairs, remaining = endpoint_partition
+    remaining = original.copy()
+    remaining[length] -= 1
+    if remaining[length] == 0:
+        del remaining[length]
 
     placed: list[int] = []
     placed_set: set[int] = {0, length}
@@ -138,7 +112,7 @@ def reconstruct(
         copy is missing. No partial removal survives a failure.
         """
         needed: Counter[int] = Counter()
-        for point in placed:
+        for point in placed_set:
             needed[abs(candidate - point)] += 1
 
         for value, count in needed.items():
@@ -160,28 +134,27 @@ def reconstruct(
 
     def search() -> None:
         d = largest_remaining()
-        pair_index = len(placed)
 
-        if pair_index == len(endpoint_pairs):
-            if d == 0:
-                solution = (0, *sorted(placed), length)
-                # Independent re-derivation: the witness must reproduce the
-                # exact input distance counts.
-                if _regenerate(solution) == original:
-                    canonical_solutions.add(_canonical(solution, length))
+        if d == 0:
+            solution = (0, *sorted(placed), length)
+            # Independent re-derivation: the witness must reproduce the
+            # exact input distance counts.
+            if len(solution) == n and _regenerate(solution) == original:
+                canonical_solutions.add(_canonical(solution, length))
             return
 
-        near, far = endpoint_pairs[pair_index]
-
+        # The point responsible for d is either coordinate d (distance d
+        # from 0) or L - d (distance d from L).
+        near, far = length - d, d
         if not placed:
-            # Root: candidates d and L-d are mirror images. Exploring the one
-            # with the smaller coordinate fixes the canonical orientation, so
-            # the reflected search is pruned entirely.
-            candidates = (near,)
+            # Root: the two candidates are mirror images. Exploring the one
+            # with the smaller coordinate fixes one orientation, so the
+            # reflected search is pruned entirely.
+            candidates = (min(near, far),)
         else:
-            # Interior-side placement first: it tends to produce the
-            # lexicographically smaller witness earlier, but does not affect
-            # completeness; both branches are explored.
+            # Both branches must be explored; the interior-side candidate is
+            # tried first (it tends to yield lexicographically smaller
+            # witnesses earlier) without affecting completeness.
             candidates = (near, far)
 
         seen: set[int] = set()

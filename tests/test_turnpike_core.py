@@ -86,6 +86,36 @@ def test_known_homometric_pair_is_ambiguous() -> None:
         assert_witness_reproduces(witness, 17, pairwise(points))
 
 
+def test_duplicate_and_coincident_complement_distances_are_ambiguous() -> None:
+    # Regression: distance 14 occurs twice -- once as the endpoint distance
+    # of point 6 (complement 6) and once as the interior gap 15 -> 1. The old
+    # greedy endpoint pairing consumed both copies as endpoint pairs and
+    # wrongly reported "impossible".
+    length = 20
+    distances = [
+        1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+        12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+    ]
+    expected = [[0, 1, 3, 6, 15, 16, 20], [0, 1, 5, 14, 15, 17, 20]]
+
+    result = reconstruct(length, distances)
+    assert result["status"] is AMBIGUOUS
+    assert result["solutions"] == expected
+    first, second = result["solutions"]
+    assert first < second
+    for witness in result["solutions"]:
+        assert_witness_reproduces(witness, length, distances)
+        # canonical witness: not lexicographically above its mirror
+        mirror = list(_mirror(tuple(witness), length))
+        assert witness <= mirror
+
+    # A reordering of the same multiset yields the identical result.
+    assert reconstruct(length, list(reversed(distances))) == result
+    shuffled = distances[:]
+    random.Random(7).shuffle(shuffled)
+    assert reconstruct(length, shuffled) == result
+
+
 def test_mirror_images_are_the_same_solution() -> None:
     points = [0, 2, 4, 7, 10]
     reflected = _mirror(tuple(points), 10)
