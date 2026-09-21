@@ -59,37 +59,6 @@ def _regenerate(solution: Sequence[int]) -> Counter[int]:
     return distances
 
 
-def _endpoint_pairs(
-    length: int, counts: Counter[int], point_count: int
-) -> tuple[tuple[tuple[int, int], ...], Counter[int]] | None:
-    available = counts.copy()
-    available[length] -= 1
-    if available[length] == 0:
-        del available[length]
-
-    pairs: list[tuple[int, int]] = []
-    for _ in range(point_count - 2):
-        selected: tuple[int, int] | None = None
-        for value in sorted(available, reverse=True):
-            complement = length - value
-            required = 2 if complement == value else 1
-            if complement > 0 and available.get(complement, 0) >= required:
-                selected = (min(value, complement), max(value, complement))
-                break
-        if selected is None:
-            return None
-
-        near, far = selected
-        available[near] -= 1
-        if available[near] == 0:
-            del available[near]
-        available[far] -= 1
-        if available[far] == 0:
-            del available[far]
-        pairs.append(selected)
-    return tuple(pairs), available
-
-
 def reconstruct(
     length: int, distances: Sequence[int]
 ) -> Mapping[str, object]:
@@ -110,16 +79,18 @@ def reconstruct(
     if n * (n - 1) // 2 != total:
         return {"status": IMPOSSIBLE}
 
-    # The pair (0, L) is the only one at distance L.
+    # The pair (0, L) is the only one at distance L; consume it up front.
     if original.get(length, 0) < 1:
         return {"status": IMPOSSIBLE}
 
-    endpoint_partition = _endpoint_pairs(length, original, n)
-    if endpoint_partition is None:
-        return {"status": IMPOSSIBLE}
-    endpoint_pairs, remaining = endpoint_partition
+    remaining: Counter[int] = Counter(original)
+    remaining[length] -= 1
+    if remaining[length] == 0:
+        del remaining[length]
 
-    placed: list[int] = []
+    # Endpoints are placed from the start; every later candidate coordinate
+    # is derived from the largest remaining distance, never enumerated.
+    placed: list[int] = [0, length]
     placed_set: set[int] = {0, length}
     canonical_solutions: set[tuple[int, ...]] = set()
 
@@ -159,30 +130,25 @@ def reconstruct(
             remaining[value] = remaining.get(value, 0) + count
 
     def search() -> None:
-        d = largest_remaining()
-        pair_index = len(placed)
-
-        if pair_index == len(endpoint_pairs):
-            if d == 0:
-                solution = (0, *sorted(placed), length)
-                # Independent re-derivation: the witness must reproduce the
-                # exact input distance counts.
-                if _regenerate(solution) == original:
-                    canonical_solutions.add(_canonical(solution, length))
+        if len(placed) == n:
+            solution = tuple(sorted(placed))
+            # Independent re-derivation: the witness must reproduce the
+            # exact input distance counts.
+            if _regenerate(solution) == original:
+                canonical_solutions.add(_canonical(solution, length))
             return
 
-        near, far = endpoint_pairs[pair_index]
-
-        if not placed:
-            # Root: candidates d and L-d are mirror images. Exploring the one
-            # with the smaller coordinate fixes the canonical orientation, so
-            # the reflected search is pruned entirely.
-            candidates = (near,)
+        # The largest remaining distance d must be realised against an
+        # endpoint: the next point sits at coordinate d (distance d from 0)
+        # or at coordinate L - d (distance d from L).
+        d = largest_remaining()
+        if len(placed) == 2:
+            # Root: candidates d and L-d are mirror images. Exploring the
+            # one with the smaller coordinate fixes the canonical
+            # orientation, so the reflected search is pruned entirely.
+            candidates = (min(d, length - d),)
         else:
-            # Interior-side placement first: it tends to produce the
-            # lexicographically smaller witness earlier, but does not affect
-            # completeness; both branches are explored.
-            candidates = (near, far)
+            candidates = (d, length - d)
 
         seen: set[int] = set()
         for candidate in candidates:

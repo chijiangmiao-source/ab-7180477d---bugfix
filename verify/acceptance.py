@@ -110,6 +110,36 @@ def main() -> int:
     )
     check("ambiguous returns two verified canonical witnesses", ok, str(body))
 
+    # ambiguous with repeated, complement-colliding distances: the exact
+    # witnesses and their order are part of the contract
+    rep_ds = [
+        1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+        12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+    ]
+    expected_witnesses = [[0, 1, 3, 6, 15, 16, 20], [0, 1, 5, 14, 15, 17, 20]]
+    status, raw = call("/turnpike", {"L": 20, "n": 7, "distances": rep_ds})
+    body = json.loads(raw)
+    check(
+        "repeated/complementary case is ambiguous with ordered witnesses",
+        status == 200
+        and body.get("status") == "ambiguous"
+        and body.get("solutions") == expected_witnesses,
+        f"{status} {raw!r}",
+    )
+    check(
+        "both witnesses independently regenerate the 21 distances",
+        all(expect_valid_witness(w, 20, rep_ds) for w in expected_witnesses),
+    )
+    r1 = call("/turnpike", {"L": 20, "n": 7, "distances": rep_ds})[1]
+    r2 = call(
+        "/turnpike", {"L": 20, "n": 7, "distances": list(reversed(rep_ds))}
+    )[1]
+    check(
+        "repeated/complementary case byte identical when reversed",
+        r1 == r2,
+        f"{r1!r} != {r2!r}",
+    )
+
     # structured error: count mismatch
     status, raw = call(
         "/turnpike", {"L": 10, "n": 4, "distances": [10]}

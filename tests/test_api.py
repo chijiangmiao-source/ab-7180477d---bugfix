@@ -66,6 +66,56 @@ def test_ambiguous_request_returns_two_canonical_witnesses(
         assert witness <= mirror
 
 
+REPEATED_COMPLEMENTARY_DISTANCES = [
+    1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+    12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+]
+REPEATED_COMPLEMENTARY_WITNESSES = [
+    [0, 1, 3, 6, 15, 16, 20],
+    [0, 1, 5, 14, 15, 17, 20],
+]
+
+
+def test_repeated_complementary_distances_return_two_witnesses(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/turnpike",
+        json={"L": 20, "n": 7, "distances": REPEATED_COMPLEMENTARY_DISTANCES},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ambiguous"
+    assert body["solutions"] == REPEATED_COMPLEMENTARY_WITNESSES
+    for witness in body["solutions"]:
+        assert witness[0] == 0 and witness[-1] == 20
+        assert witness == sorted(set(witness))
+        # independent regeneration of the full 21-distance multiset
+        assert Counter(pairwise(witness)) == Counter(
+            REPEATED_COMPLEMENTARY_DISTANCES
+        )
+
+
+def test_repeated_complementary_case_is_byte_identical_when_reordered(
+    client: TestClient,
+) -> None:
+    payload = json.dumps(
+        {"L": 20, "n": 7, "distances": REPEATED_COMPLEMENTARY_DISTANCES},
+        separators=(",", ":"),
+    )
+    reversed_payload = json.dumps(
+        {
+            "L": 20,
+            "n": 7,
+            "distances": list(reversed(REPEATED_COMPLEMENTARY_DISTANCES)),
+        },
+        separators=(",", ":"),
+    )
+    first = client.post("/turnpike", content=payload).content
+    assert client.post("/turnpike", content=payload).content == first
+    assert client.post("/turnpike", content=reversed_payload).content == first
+
+
 def test_distance_count_mismatch_points_at_field(client: TestClient) -> None:
     response = client.post(
         "/turnpike", json={"L": 10, "n": 4, "distances": [10]}

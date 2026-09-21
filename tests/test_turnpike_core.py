@@ -73,6 +73,36 @@ def test_nontriangular_count_is_impossible() -> None:
     assert reconstruct(10, distances) == {"status": IMPOSSIBLE}
 
 
+def test_repeated_complementary_distances_are_ambiguous() -> None:
+    # Regression: repeated distances (1,1 / 3,3 / 5,5 / 14,14 / 15,15) with
+    # complementary collisions (4+16 = 5+15 = 6+14 = 20) make the pairing of
+    # endpoint distances non-unique; a greedy pre-partition used to misjudge
+    # this reconstructible input as impossible.
+    distances = [
+        1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+        12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+    ]
+    result = reconstruct(20, distances)
+    assert result["status"] is AMBIGUOUS
+    first, second = result["solutions"]
+    assert first == [0, 1, 3, 6, 15, 16, 20]
+    assert second == [0, 1, 5, 14, 15, 17, 20]
+    assert first < second  # lexicographically smallest two, in order
+    for witness in result["solutions"]:
+        assert_witness_reproduces(witness, 20, distances)
+
+
+def test_repeated_complementary_case_is_order_invariant() -> None:
+    distances = [
+        1, 1, 2, 3, 3, 4, 5, 5, 6, 9, 10,
+        12, 13, 14, 14, 15, 15, 16, 17, 19, 20,
+    ]
+    expected = reconstruct(20, distances)
+    assert reconstruct(20, list(reversed(distances))) == expected
+    shuffled = random.Random(20).sample(distances, len(distances))
+    assert reconstruct(20, shuffled) == expected
+
+
 def test_known_homometric_pair_is_ambiguous() -> None:
     # Classical non-congruent homometric sets.
     points = [0, 1, 4, 10, 12, 17]
